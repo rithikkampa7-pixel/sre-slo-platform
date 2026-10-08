@@ -36,7 +36,7 @@ groups:
             Over the last hour the 5xx ratio is {{ $value | humanizePercentage }},
             against a 0.1% budget. At this rate the full 30-day error budget is
             gone in about 2 days. Confirmed still active in the last 5 minutes.
-          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+          runbook_url: "https://github.com/rithikkampa7-pixel/sre-slo-platform/blob/main/docs/runbook-availability.md"
 
       - alert: AvailabilityErrorBudgetBurnSlow
         expr: |
@@ -53,7 +53,7 @@ groups:
           description: >-
             6h 5xx ratio is {{ $value | humanizePercentage }}. Slower than an
             outage but still on track to exhaust the budget in ~5 days.
-          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+          runbook_url: "https://github.com/rithikkampa7-pixel/sre-slo-platform/blob/main/docs/runbook-availability.md"
 
       - alert: AvailabilityErrorBudgetLeak
         expr: |
@@ -70,7 +70,7 @@ groups:
           description: >-
             Not urgent enough to page, but 10% of the 30-day budget goes every
             day at this rate. Needs an owner during business hours.
-          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+          runbook_url: "https://github.com/rithikkampa7-pixel/sre-slo-platform/blob/main/docs/runbook-availability.md"
 
       - alert: AvailabilityChronicUnderperformance
         expr: |
@@ -108,7 +108,7 @@ groups:
           description: >-
             {{ $value | humanizePercentage }} of requests are slower than the
             300ms target over the last hour, against a 1% budget.
-          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
+          runbook_url: "https://github.com/rithikkampa7-pixel/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
 
       - alert: LatencyErrorBudgetBurnSlow
         expr: |
@@ -120,7 +120,7 @@ groups:
           burn_rate: "6"
         annotations:
           summary: "checkout-api latency degraded over six hours"
-          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
+          runbook_url: "https://github.com/rithikkampa7-pixel/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
 
   - name: slo_meta
     rules:
