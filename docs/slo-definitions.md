@@ -78,6 +78,38 @@ leaving it latched for the length of the long window.
 The 14.4 figure is not arbitrary: budget spent = burn x (window / 30d), so
 14.4 x (1h / 720h) = 2% of the budget in one hour.
 
+## Pitfall: ratio SLIs need traffic
+
+A ratio of two rates has a failure mode that caught this stack during
+testing. After clearing an injected fault, the error ratio stayed pinned at
+0.39 and the page would not clear. Nothing was broken — there was simply no
+traffic. With a flat counter, `rate()` decays the numerator and denominator
+*proportionally*, so the ratio holds its last value until the window fully
+rolls past. The alert cannot clear, because nothing is arriving to prove
+recovery.
+
+Two consequences:
+
+1. **Recovery requires traffic.** In the demo, driving clean requests for one
+   window brought the SLI from 0.39 to 0.0024 and resolved both pages. In
+   production this is usually automatic; for a low-QPS service it is not.
+2. **Low-traffic services need a minimum-volume guard.** At 10 req/min a
+   single error is a 10% error rate for that window — six orders of magnitude
+   over budget, and pure noise. The standard fix is to require a traffic floor
+   in the alert expression:
+
+   ```promql
+   sli:availability:error_ratio_rate1h > (14.4 * 0.001)
+     and
+   sli:availability:error_ratio_rate5m > (14.4 * 0.001)
+     and
+   sum(rate(http_requests_total[5m])) > 1     # at least 1 req/s
+   ```
+
+   This repo deliberately omits the guard, because the load generator always
+   supplies traffic and adding it would hide the behaviour above. For a real
+   low-traffic service, add it.
+
 ## What the budget is *for*
 
 The error budget is a spending allowance, not a score to maximise. 100% of

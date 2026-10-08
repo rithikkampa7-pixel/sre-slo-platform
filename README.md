@@ -120,7 +120,7 @@ you need the data. The smoke job starts the full stack, drives traffic through
 it, and asserts the availability SLI returns a value and both fast-burn alerts
 are loaded.
 
-## Two bugs this repo was built around
+## Three findings this repo was built around
 
 Both were found by running the stack, not by reading the config, and both are
 documented in place rather than quietly fixed:
@@ -140,6 +140,14 @@ different series families, so `rate()` extrapolates them independently at
 window edges and the ratio can exceed 1. The denominator is now the
 `le="+Inf"` bucket from the same family, with `clamp_min(..., 0)` as a
 backstop against counter resets.
+
+**3. A ratio SLI cannot recover without traffic.** After clearing an injected
+fault the error ratio stayed pinned at 0.39 and the page would not clear --
+with a flat counter, `rate()` decays numerator and denominator proportionally,
+so the ratio holds its last value until the window rolls past. Driving clean
+traffic for one window dropped it to 0.0024 and resolved both pages. The
+general fix for low-QPS services is a minimum-traffic guard in the alert
+expression; see [slo-definitions.md](docs/slo-definitions.md#pitfall-ratio-slis-need-traffic).
 
 ## Notes and limitations
 
