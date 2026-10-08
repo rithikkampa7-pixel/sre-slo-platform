@@ -1,0 +1,103 @@
+# Recording rules for the two SLIs.
+#
+# Why precompute: burn-rate alerts need the same ratio over seven different
+# windows. Recording them once keeps the alert expressions readable and stops
+# every evaluation from re-scanning raw counters.
+#
+# Probe traffic (/healthz) is never instrumented in the app, so it cannot
+# inflate these ratios. Only user-facing routes are counted.
+groups:
+  - name: sli_availability
+    interval: 30s
+    rules:
+      - record: sli:availability:error_ratio_rate5m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total[5m]))
+
+      - record: sli:availability:error_ratio_rate30m
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[30m]))
+            /
+          sum(rate(http_requests_total[30m]))
+
+      - record: sli:availability:error_ratio_rate1h
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[1h]))
+            /
+          sum(rate(http_requests_total[1h]))
+
+      - record: sli:availability:error_ratio_rate2h
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[2h]))
+            /
+          sum(rate(http_requests_total[2h]))
+
+      - record: sli:availability:error_ratio_rate6h
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[6h]))
+            /
+          sum(rate(http_requests_total[6h]))
+
+      - record: sli:availability:error_ratio_rate1d
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[1d]))
+            /
+          sum(rate(http_requests_total[1d]))
+
+      - record: sli:availability:error_ratio_rate3d
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[3d]))
+            /
+          sum(rate(http_requests_total[3d]))
+
+  - name: sli_latency
+    interval: 30s
+    rules:
+      # Fraction of requests SLOWER than the 300ms target. The le="0.3"
+      # bucket exists explicitly in the app's histogram, so this needs no
+      # interpolation and is exact rather than an estimated quantile.
+      #
+      # The denominator is the le="+Inf" bucket, NOT _count. Both equal the
+      # total request count, but +Inf is part of the same histogram series
+      # family as the numerator, so rate() extrapolates both identically.
+      # Mixing _bucket and _count lets the two extrapolate differently at
+      # window edges and can push the ratio just above 1.
+      #
+      # clamp_min guards the remaining edge case: a counter reset mid-window
+      # (a restart or a scrape hitting a different process) can still produce
+      # numerator > denominator for one evaluation. A negative "share of slow
+      # requests" is meaningless, and it would silently clear a latency alert.
+      - record: sli:latency:slow_ratio_rate5m
+        expr: |
+          clamp_min(
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.3"}[5m]))
+                /
+              sum(rate(http_request_duration_seconds_bucket{le="+Inf"}[5m]))
+            ),
+            0
+          )
+
+      - record: sli:latency:slow_ratio_rate1h
+        expr: |
+          clamp_min(
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.3"}[1h]))
+                /
+              sum(rate(http_request_duration_seconds_bucket{le="+Inf"}[1h]))
+            ),
+            0
+          )
+
+      - record: sli:latency:slow_ratio_rate6h
+        expr: |
+          clamp_min(
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.3"}[6h]))
+                /
+              sum(rate(http_request_duration_seconds_bucket{le="+Inf"}[6h]))
+            ),
+            0
+          )
