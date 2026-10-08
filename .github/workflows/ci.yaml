@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: validate rules, config and dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A broken recording rule silently stops an SLO from being measured,
+      # which is worse than a loud failure. Catch it before merge.
+      - name: promtool check rules
+        run: |
+          docker run --rm -v "$PWD/observability/prometheus:/w" \
+            --entrypoint promtool prom/prometheus:v3.1.0 \
+            check rules /w/rules/sli-recording.yaml /w/rules/slo-burn-rate.yaml
+
+      - name: amtool check alertmanager config
+        run: |
+          docker run --rm -v "$PWD/observability/alertmanager:/w" \
+            --entrypoint amtool prom/alertmanager:v0.28.0 \
+            check-config /w/alertmanager.yml
+
+      - name: docker compose config
+        run: docker compose config -q
+
+      - name: dashboard JSON parses
+        run: |
+          python3 - <<'PY'
+          import glob, json
+          for f in glob.glob("observability/grafana/dashboards/*.json"):
+              d = json.load(open(f))
+              assert d.get("panels"), f"{f} has no panels"
+              print(f, "ok", len(d["panels"]), "panels")
+          PY
+
+  lint:
+    name: lint service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check services/
+      - run: ruff format --check services/
+
+  smoke:
+    name: stack comes up and SLIs report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: start stack
+        run: docker compose up -d --build
+
+      - name: wait for prometheus to evaluate the recording rules
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf 'http://localhost:9090/-/ready' >/dev/null; then break; fi
+            sleep 3
+          done
+          # Generate traffic so the SLI has samples to aggregate.
+          for i in $(seq 1 60); do curl -sf http://localhost:8000/checkout >/dev/null || true; done
+          sleep 45
+
+      - name: assert the availability SLI is reporting
+        run: |
+          RESULT=$(curl -sf --get 'http://localhost:9090/api/v1/query' \
+            --data-urlencode 'query=sli:availability:error_ratio_rate5m')
+          echo "$RESULT"
+          echo "$RESULT" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert d['status']=='success', d
+          assert d['data']['result'], 'SLI returned no data — recording rule is not firing'
+          print('availability SLI reporting:', d['data']['result'][0]['value'][1])
+          "
+
+      - name: assert alert rules loaded
+        run: |
+          curl -sf 'http://localhost:9090/api/v1/rules' | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          names=[r['name'] for g in d['data']['groups'] for r in g['rules'] if r['type']=='alerting']
+          print('loaded alerts:', names)
+          assert 'AvailabilityErrorBudgetBurnFast' in names
+          assert 'LatencyErrorBudgetBurnFast' in names
+          "
+
+      - name: dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: teardown
+        if: always()
+        run: docker compose down -v
