@@ -1,0 +1,140 @@
+# Multi-window, multi-burn-rate alerts (Google SRE Workbook, ch. 5).
+#
+# Availability SLO: 99.9% of requests succeed over a 30-day window.
+#   Error budget = 0.1% of requests.
+#
+# A "burn rate" of 1 consumes the whole budget in exactly 30 days. Alerting on
+# a single long window is too slow to catch an outage; alerting on a single
+# short window pages on every blip. Pairing a long window (does this matter?)
+# with a short one (is it still happening?) gives both precision and recall,
+# and the short window stops the alert from latching on after recovery.
+#
+#   Severity  Long   Short  Burn   Budget consumed   Detects
+#   --------  -----  -----  -----  ----------------  ---------------------
+#   page      1h     5m     14.4   2%                a hard outage, fast
+#   page      6h     30m    6      5%                a serious degradation
+#   ticket    1d     2h     3      10%               a slow leak
+#   ticket    3d     6h     1      10%               chronic underperformance
+#
+# 0.001 is the error-budget ratio (1 - 0.999). Thresholds are burn * 0.001.
+groups:
+  - name: slo_availability_burn
+    rules:
+      - alert: AvailabilityErrorBudgetBurnFast
+        expr: |
+          sli:availability:error_ratio_rate1h  > (14.4 * 0.001)
+            and
+          sli:availability:error_ratio_rate5m  > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+          burn_rate: "14.4"
+        annotations:
+          summary: "checkout-api is burning its error budget 14.4x too fast"
+          description: >-
+            Over the last hour the 5xx ratio is {{ $value | humanizePercentage }},
+            against a 0.1% budget. At this rate the full 30-day error budget is
+            gone in about 2 days. Confirmed still active in the last 5 minutes.
+          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+
+      - alert: AvailabilityErrorBudgetBurnSlow
+        expr: |
+          sli:availability:error_ratio_rate6h  > (6 * 0.001)
+            and
+          sli:availability:error_ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: page
+          slo: availability
+          burn_rate: "6"
+        annotations:
+          summary: "checkout-api error budget burning 6x over six hours"
+          description: >-
+            6h 5xx ratio is {{ $value | humanizePercentage }}. Slower than an
+            outage but still on track to exhaust the budget in ~5 days.
+          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+
+      - alert: AvailabilityErrorBudgetLeak
+        expr: |
+          sli:availability:error_ratio_rate1d > (3 * 0.001)
+            and
+          sli:availability:error_ratio_rate2h > (3 * 0.001)
+        for: 1h
+        labels:
+          severity: ticket
+          slo: availability
+          burn_rate: "3"
+        annotations:
+          summary: "checkout-api is leaking error budget (3x) — open a ticket"
+          description: >-
+            Not urgent enough to page, but 10% of the 30-day budget goes every
+            day at this rate. Needs an owner during business hours.
+          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-availability.md"
+
+      - alert: AvailabilityChronicUnderperformance
+        expr: |
+          sli:availability:error_ratio_rate3d > (1 * 0.001)
+            and
+          sli:availability:error_ratio_rate6h > (1 * 0.001)
+        for: 3h
+        labels:
+          severity: ticket
+          slo: availability
+          burn_rate: "1"
+        annotations:
+          summary: "checkout-api has been at or over budget for three days"
+          description: >-
+            The service is not meeting its 99.9% target in steady state. This
+            is a signal to spend the next sprint on reliability rather than
+            features, not to wake anyone up.
+
+  - name: slo_latency_burn
+    rules:
+      # Latency SLO: 99% of requests complete within 300ms.
+      # Budget = 1% slow requests, so thresholds are burn * 0.01.
+      - alert: LatencyErrorBudgetBurnFast
+        expr: |
+          sli:latency:slow_ratio_rate1h > (14.4 * 0.01)
+            and
+          sli:latency:slow_ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: page
+          slo: latency
+          burn_rate: "14.4"
+        annotations:
+          summary: "checkout-api p99 latency SLO burning 14.4x too fast"
+          description: >-
+            {{ $value | humanizePercentage }} of requests are slower than the
+            300ms target over the last hour, against a 1% budget.
+          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
+
+      - alert: LatencyErrorBudgetBurnSlow
+        expr: |
+          sli:latency:slow_ratio_rate6h > (6 * 0.01)
+        for: 30m
+        labels:
+          severity: ticket
+          slo: latency
+          burn_rate: "6"
+        annotations:
+          summary: "checkout-api latency degraded over six hours"
+          runbook_url: "https://github.com/OWNER/sre-slo-platform/blob/main/docs/runbook-high-latency.md"
+
+  - name: slo_meta
+    rules:
+      # An SLI that silently stops reporting looks identical to a perfectly
+      # healthy one. Alert on the absence of data too.
+      - alert: SLIDataMissing
+        expr: absent(sli:availability:error_ratio_rate5m)
+        for: 10m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "Availability SLI has stopped reporting"
+          description: >-
+            No data for the availability SLI for 10 minutes. The SLO is
+            unmeasurable, which is an outage of the monitoring, not proof of
+            health. Check that checkout-api is up and being scraped.
