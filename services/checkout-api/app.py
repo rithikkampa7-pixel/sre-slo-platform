@@ -4,6 +4,7 @@ Exposes Prometheus metrics on /metrics. Two control endpoints let you inject
 latency and errors at runtime, which is how the runbook and postmortem in
 docs/ were produced.
 """
+
 import asyncio
 import os
 import random
@@ -64,8 +65,9 @@ async def _handle(method: str, route: str) -> Response:
     if status == 200 and route == "/checkout":
         INFLIGHT.inc(random.randint(1, 4))
     if status != 200:
-        return Response('{"error":"internal"}', status_code=500,
-                        media_type="application/json")
+        return Response(
+            '{"error":"internal"}', status_code=500, media_type="application/json"
+        )
     return Response('{"ok":true}', media_type="application/json")
 
 
@@ -86,8 +88,9 @@ async def healthz() -> Response:
 
 
 @app.post("/admin/inject")
-async def inject(error_rate: float | None = None,
-                 latency_ms: int | None = None) -> dict:
+async def inject(
+    error_rate: float | None = None, latency_ms: int | None = None
+) -> dict:
     """Change fault injection without a restart. Demo-only; never ship this."""
     if error_rate is not None:
         STATE["error_rate"] = max(0.0, min(1.0, error_rate))

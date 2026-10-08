@@ -6,51 +6,61 @@
 #
 # Probe traffic (/healthz) is never instrumented in the app, so it cannot
 # inflate these ratios. Only user-facing routes are counted.
+#
+# `or vector(0)` on the numerator is load-bearing. http_requests_total with a
+# 5xx status does not exist until the first server error, and dividing an
+# empty vector by anything yields an empty vector -- so a service that has
+# never failed recorded NO DATA rather than 0. That is indistinguishable from
+# a broken exporter and would trip the SLIDataMissing alert on a perfectly
+# healthy system. Caught by this repo's own CI smoke assertion.
+#
+# clamp_min on the denominator avoids a divide-by-zero NaN in the window
+# before any traffic has arrived at all.
 groups:
   - name: sli_availability
     interval: 30s
     rules:
       - record: sli:availability:error_ratio_rate5m
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0))
             /
-          sum(rate(http_requests_total[5m]))
+          clamp_min(sum(rate(http_requests_total[5m])), 1e-9)
 
       - record: sli:availability:error_ratio_rate30m
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[30m]))
+          (sum(rate(http_requests_total{status=~"5.."}[30m])) or vector(0))
             /
-          sum(rate(http_requests_total[30m]))
+          clamp_min(sum(rate(http_requests_total[30m])), 1e-9)
 
       - record: sli:availability:error_ratio_rate1h
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[1h]))
+          (sum(rate(http_requests_total{status=~"5.."}[1h])) or vector(0))
             /
-          sum(rate(http_requests_total[1h]))
+          clamp_min(sum(rate(http_requests_total[1h])), 1e-9)
 
       - record: sli:availability:error_ratio_rate2h
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[2h]))
+          (sum(rate(http_requests_total{status=~"5.."}[2h])) or vector(0))
             /
-          sum(rate(http_requests_total[2h]))
+          clamp_min(sum(rate(http_requests_total[2h])), 1e-9)
 
       - record: sli:availability:error_ratio_rate6h
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[6h]))
+          (sum(rate(http_requests_total{status=~"5.."}[6h])) or vector(0))
             /
-          sum(rate(http_requests_total[6h]))
+          clamp_min(sum(rate(http_requests_total[6h])), 1e-9)
 
       - record: sli:availability:error_ratio_rate1d
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[1d]))
+          (sum(rate(http_requests_total{status=~"5.."}[1d])) or vector(0))
             /
-          sum(rate(http_requests_total[1d]))
+          clamp_min(sum(rate(http_requests_total[1d])), 1e-9)
 
       - record: sli:availability:error_ratio_rate3d
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[3d]))
+          (sum(rate(http_requests_total{status=~"5.."}[3d])) or vector(0))
             /
-          sum(rate(http_requests_total[3d]))
+          clamp_min(sum(rate(http_requests_total[3d])), 1e-9)
 
   - name: sli_latency
     interval: 30s
